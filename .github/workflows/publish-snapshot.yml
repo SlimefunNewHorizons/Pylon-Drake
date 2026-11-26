@@ -1,8 +1,8 @@
-name: Publish to Maven Central Snapshots
+name: Publish to Maven Central Snapshots (Upstream Disabled)
 
+# Disabled automatic push trigger on DrakesCraft fork (requires upstream Sonatype Central Portal credentials).
 on:
-  push:
-    branches: [ "master" ]
+  workflow_dispatch:
 
 env:
   SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}

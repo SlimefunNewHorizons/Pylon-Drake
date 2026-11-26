@@ -1,0 +1,1 @@
+Omitido en verificar.yml generico: Pylon-Drake compila en conjunto con Rebar-Drake mediante el reactor parallel-dev-repo en el workflow dedicado Java CI with Gradle (.github/workflows/gradle.yml).

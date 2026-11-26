@@ -88,7 +88,7 @@ jobs:
 
           # Cambio normal: se mide cuantas lineas de codigo cambiaron (src/ y build).
           if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            LINEAS="$(git diff --numstat HEAD~1 HEAD -- 'src/**' pom.xml build.gradle \
+            LINEAS="$(git diff --numstat HEAD~1 HEAD -- 'src/**' pom.xml build.gradle build.gradle.kts \
                       | awk '{ s += $1 + $2 } END { print s + 0 }')"
           else
             LINEAS=9999  # primer commit: publicar
@@ -113,29 +113,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Preparar Java 21
-        uses: actions/setup-java@v4
+      - name: Preparar Java 25
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
-          cache: maven
+          java-version: '25'
+
+      - name: Clone parallel-dev-repo reactor
+        uses: actions/checkout@v5
+        with:
+          repository: 'pylonmc/parallel-dev-repo'
+          ref: '5db64219c223b7dc4fc9b457cecab9dbc1082a88'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Clone Rebar-Drake
+        uses: actions/checkout@v5
+        with:
+          repository: 'SlimefunNewHorizons/Rebar-Drake'
+          path: 'rebar'
+
+      - name: Clone Pylon-Drake
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: 'pylon'
 
       - name: Compilar
-        run: mvn -B -ntp package -DskipTests
+        run: |
+          ./gradlew :pylon:shadowJar -Pversion=1.0.0-${GITHUB_SHA::7} --no-daemon
 
       - name: Localizar el jar
         id: jar
         run: |
           set -euo pipefail
-          RUTA="$(find target -maxdepth 1 -name '*.jar' \
-                  ! -name 'original-*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+          RUTA="$(find pylon/build/libs -maxdepth 1 -name 'pylon-*.jar' \
+                  ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name '*-plain.jar' \
                   | head -n1)"
           if [ -z "$RUTA" ]; then echo "No se encontro el jar compilado"; exit 1; fi
           echo "ruta=$RUTA" >> "$GITHUB_OUTPUT"
-          # Modrinth exige un numero de version para cada fichero que se sube. Se toma la del
-          # pom y, si no se puede leer, se cae al sha corto del commit para no bloquear la subida.
-          VER="$(mvn -q -ntp help:evaluate -Dexpression=project.version -DforceStdout 2>/dev/null | tail -n1 | tr -d '[:space:]')"
-          case "$VER" in ''|*ERROR*|*'$'*) VER="0.0.0-${GITHUB_SHA::7}";; esac
+          VER="1.0.0-${GITHUB_SHA::7}"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "Version detectada: $VER"
 
@@ -149,12 +168,12 @@ jobs:
           set -euo pipefail
           # Los banners son SVG ANIMADOS y Modrinth no renderiza SVG en su galeria. Un PNG perderia
           # la animacion, asi que se rasteriza a GIF capturando fotogramas de un ciclo con Chromium.
-          SVG="$(find docs assets . -maxdepth 2 -name 'banner.svg' 2>/dev/null | head -n1 || true)"
+          SVG="$(find pylon/docs pylon/assets pylon . -maxdepth 2 -name 'banner.svg' 2>/dev/null | head -n1 || true)"
           if [ -n "$SVG" ]; then
             sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
             npm install --no-save puppeteer@23
             mkdir -p .modrinth
-            node .github/scripts/svg-to-gif.mjs "$SVG" .modrinth/banner.gif
+            node pylon/.github/scripts/svg-to-gif.mjs "$SVG" .modrinth/banner.gif
             echo "Banner convertido: $SVG -> .modrinth/banner.gif"
           else
             echo "Sin banner.svg; se omite la conversion."
@@ -172,7 +191,7 @@ jobs:
           # Vacio = se envia a la cola de revision de Modrinth. Poner "true" lo deja en borrador.
           MODRINTH_DRAFT: ${{ vars.MODRINTH_DRAFT }}
           PROJECT_LICENSE: ${{ vars.MODRINTH_LICENSE }}
-        run: node .github/scripts/modrinth-ensure-project.mjs
+        run: cd pylon && node .github/scripts/modrinth-ensure-project.mjs
 
       - name: Publicar en Modrinth
         # Se salta solo en dry_run: si el proyecto no existia, el paso anterior ya lo creo.
@@ -203,7 +222,7 @@ jobs:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           MODRINTH_PROJECT_ID: ${{ steps.cfg.outputs.project_id }}
           MODRINTH_DRAFT: ${{ vars.MODRINTH_DRAFT }}
-        run: node .github/scripts/modrinth-submit-review.mjs
+        run: cd pylon && node .github/scripts/modrinth-submit-review.mjs
 
       - name: Resumen
         if: always()
